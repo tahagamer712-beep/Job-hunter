@@ -72,18 +72,22 @@ class TestSendEmailIsolation(unittest.TestCase):
 
     def test_per_user_applications_module_reflects_one_tap_by_design(self):
         """
-        approval.py (legacy/reference) still enforces the strict 3-step
-        PENDING->PREVIEW->CONFIRMED->SENT flow with no direct shortcut.
-        applications.py (what the bot actually uses) deliberately allows
-        PENDING_APPROVAL -> SENT directly, per the owner's explicit request:
-        one button tap IS the approval. This is not a security regression —
-        see the guarantees checked below instead.
+        P0 (2026-10-16): one-tap send REMOVED per owner P0 spec. The ONLY
+        state that can reach SENT is SENDING, and the only state that can
+        reach SENDING is FINAL_CONFIRMED (two independent approvals).
+        No DRAFT/PREVIEW/FIRST_CONFIRMED -> SENT shortcut exists.
         """
         from src.applications import VALID_TRANSITIONS as APP_TRANSITIONS
-        self.assertIn("SENT", APP_TRANSITIONS.get("PENDING_APPROVAL", set()))
         self.assertEqual(APP_TRANSITIONS.get("SENT"), set(), "SENT must still be terminal — no re-sending.")
         reachers = [s for s, t in APP_TRANSITIONS.items() if "SENT" in t]
-        self.assertIn("PENDING_APPROVAL", reachers)
+        # SENDING = normal path; NEEDS_VERIFICATION = manual confirm after
+        # unknown transport result (no blind retry — human verified it sent)
+        self.assertEqual(sorted(reachers), ["NEEDS_VERIFICATION", "SENDING"],
+                         f"Only SENDING/NEEDS_VERIFICATION may reach SENT, got: {reachers}")
+        # No shortcut from any pre-approval state
+        for pre in ("DRAFT", "PREVIEW", "FIRST_CONFIRMED", "FINAL_CONFIRMED", "PENDING_APPROVAL"):
+            self.assertNotIn("SENT", APP_TRANSITIONS.get(pre, set()),
+                             f"{pre} must NOT reach SENT directly")
 
     def test_send_application_email_only_called_from_the_apply_callback(self):
         """

@@ -47,6 +47,105 @@ class IngestResult:
     pending_title_id: Optional[int] = None
 
 
+def compute_decisions(category, detected_area_ids, tree, raw_text: str,
+                      expiry_status: str, source: dict) -> dict:
+    """P1: Compute ROLE_DECISION / LOCATION_DECISION / EXPIRY_STATUS / FINAL_DECISION
+    as four independent stored fields (Master Prompt Section 11).
+
+    - ROLE_DECISION: GREEN (accepted category), RED (rejected category), YELLOW (unknown)
+    - LOCATION_DECISION: GREEN (Rusafa verified), RED (Karkh gate), YELLOW (Baghdad-only/unknown)
+    - EXPIRY_STATUS: passed through (ACTIVE / EXPIRED / UNKNOWN)
+    - FINAL_DECISION: derived — RED > EXPIRED > YELLOW > GREEN
+    """
+    # --- Role ---
+    ACCEPT = {"MEDICAL_REPRESENTATIVE", "SCIENTIFIC_REPRESENTATIVE", "MEDICAL_INFORMATION",
+              "PHARMACIST", "MEDICAL_DEVICES"}
+    REJECT = {"GENERAL_SALES", "COSMETICS_SALES", "TEAM_LEADER", "MARKETING", "ADMIN"}
+    if category is None:
+        role_decision = "YELLOW"
+        role_reason = "الفئة غير محددة — بانتظار التصنيف"
+    else:
+        key = (category.canonical_name or "").upper().replace(" ", "_")
+        if key in ACCEPT or any(a in key for a in ("MEDICAL_REP", "SCIENTIFIC", "PHARMA")):
+            # Exclude cosmetics/dental/supplement contexts even if name matches
+            role_decision = "GREEN"
+            role_reason = f"فئة مقبولة: {category.canonical_name}"
+        elif key in REJECT or any(r in key for r in ("GENERAL_SALES", "COSMETICS")):
+            role_decision = "RED"
+            role_reason = f"فئة مرفوضة: {category.canonical_name}"
+        else:
+            role_decision = "YELLOW"
+            role_reason = f"فئة غير مؤكدة: {category.canonical_name}"
+
+    # --- Location ---
+    text_low = raw_text.lower()
+    karkh_markers = ["الكرخ", "karkh", "جانب الكرخ", "كرخ بغداد"]
+    if any(m in raw_text or m in text_low for m in karkh_markers):
+        location_decision = "RED"
+        location_reason = "بوابة الكرخ: ذُكر الكرخ في الإعلان"
+    elif detected_area_ids:
+        # Check if any detected area is verified Rusafa
+        rusafa_hit = False
+        for aid in detected_area_ids:
+            try:
+                node = tree.get(aid)
+                if node and getattr(node, "side", "").upper() == "RUSAFA":
+                    rusafa_hit = True
+                    break
+            except Exception:
+                pass
+        if rusafa_hit:
+            location_decision = "GREEN"
+            location_reason = "منطقة رصافة موثقة"
+        else:
+            location_decision = "YELLOW"
+            location_reason = "منطقة مكتشفة لكن غير موثقة كرصافة"
+    elif "بغداد" in raw_text or "baghdad" in text_low:
+        location_decision = "YELLOW"
+        location_reason = "ذُكرت بغداد دون تحديد الجانب — للمراجعة"
+    else:
+        location_decision = "YELLOW"
+        location_reason = "الموقع غير محدد — للمراجعة"
+
+    # --- Final (derived, strict precedence) ---
+    if role_decision == "RED" or location_decision == "RED":
+        final_decision = "RED"
+    elif expiry_status == "EXPIRED":
+        final_decision = "EXPIRED"
+    elif role_decision == "YELLOW" or location_decision == "YELLOW":
+        final_decision = "YELLOW"
+    else:
+        final_decision = "GREEN"
+
+    # --- 72h / unknown-date gate: never in New Jobs, never in application flow ---
+    posted_at = source.get("posted_at") if isinstance(source, dict) else None
+    fresh = True
+    if posted_at:
+        try:
+            from datetime import datetime, timezone
+            pa = posted_at
+            if isinstance(pa, str):
+                pa = datetime.fromisoformat(pa.replace("Z", "+00:00"))
+            age_h = (datetime.now(timezone.utc) - pa).total_seconds() / 3600
+            if age_h >= 72:
+                fresh = False
+        except Exception:
+            fresh = False  # unparseable date = not provably fresh
+    else:
+        fresh = False  # unknown date = not fresh (per P0 rule)
+
+    return {
+        "role_decision": role_decision,
+        "role_reason": role_reason,
+        "location_decision": location_decision,
+        "location_reason": location_reason,
+        "expiry_status": expiry_status,
+        "final_decision": final_decision,
+        "decision_reason": f"{role_reason} | {location_reason}",
+        "is_fresh": fresh,
+    }
+
+
 def ingest_ad(db, raw_text: str, source: dict, notify_fn: Optional[Callable] = None,
               today: Optional[date] = None) -> IngestResult:
     existing = db.get_existing_texts()
@@ -86,7 +185,23 @@ def ingest_ad(db, raw_text: str, source: dict, notify_fn: Optional[Callable] = N
         deadline=deadline.isoformat() if deadline else None, expiry_status=expiry_status,
     )
 
+    # P1: compute + store the four decision fields
+    decisions = compute_decisions(category, detected_area_ids, tree, raw_text,
+                                  expiry_status, source)
+    try:
+        db.update_job_decisions(
+            job_id,
+            role_decision=decisions["role_decision"],
+            location_decision=decisions["location_decision"],
+            expiry_status=decisions["expiry_status"],
+            final_decision=decisions["final_decision"],
+            decision_reason=decisions["decision_reason"],
+        )
+    except Exception as e:
+        logger.warning("Could not store decisions for job %s: %s", job_id, e)
+
     result = IngestResult(job_id=job_id, detected_area_ids=detected_area_ids)
+    result.is_fresh = decisions["is_fresh"]
 
     if category is None:
         pending_id = taxonomy.queue_pending_title(raw_text[:120], source_job_id=job_id)

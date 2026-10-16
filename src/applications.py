@@ -1,8 +1,8 @@
 """
 Per-user application state machine + email sender.
 
-OWNER'S EXPLICIT UX DECISION (documented here so the reasoning is clear):
-pressing the "✉️ تقديم" button IS the user's approval — there is no
+P0 SAFETY (2026-10-16): One-tap send REMOVED per owner P0 spec.
+pressing the apply button sends NOTHING — it opens a preview. — there is no
 separate Preview -> Confirm -> Send dance for email applications anymore.
 One tap composes the message (subject, a short cover note, the user's CV
 attached) and sends it immediately from the user's OWN email account. This
@@ -35,18 +35,26 @@ from typing import Optional
 
 from .email_credentials import decrypt_password
 
+# P0 SAFETY (2026-10-16): Two independent approvals required before any send.
+# DRAFT -> PREVIEW (shows preview, sends NOTHING)
+# PREVIEW -> FIRST_CONFIRMED (shows final confirmation, sends NOTHING)
+# FIRST_CONFIRMED -> FINAL_CONFIRMED (enables the Send button, sends NOTHING)
+# FINAL_CONFIRMED -> SENDING -> SENT (only after real transport success)
+# Any content edit invalidates approvals (back to DRAFT).
 VALID_TRANSITIONS = {
-    # SENT is directly reachable from PENDING_APPROVAL by design: the single
-    # button tap is the approval (see module docstring). CONFIRMED/PREVIEW
-    # are kept as optional intermediate states for any future flow that
-    # wants them (e.g. an "edit cover note first" option), but the bot's
-    # current one-tap flow does not use them.
-    "PENDING_APPROVAL": {"SENT", "PREVIEW", "CANCELLED", "APPLIED_EXTERNALLY"},
-    "PREVIEW": {"CONFIRMED", "PENDING_APPROVAL", "CANCELLED"},
-    "CONFIRMED": {"SENT", "PREVIEW"},
+    "DRAFT": {"PREVIEW", "CANCELLED", "APPLIED_EXTERNALLY"},
+    "PREVIEW": {"FIRST_CONFIRMED", "DRAFT", "CANCELLED", "APPLIED_EXTERNALLY"},
+    "FIRST_CONFIRMED": {"FINAL_CONFIRMED", "DRAFT", "CANCELLED"},
+    "FINAL_CONFIRMED": {"SENDING", "DRAFT", "CANCELLED"},
+    "SENDING": {"SENT", "FAILED", "NEEDS_VERIFICATION"},
     "SENT": set(),
-    "CANCELLED": {"PREVIEW", "PENDING_APPROVAL"},
+    "FAILED": {"DRAFT", "CANCELLED"},
+    "NEEDS_VERIFICATION": {"DRAFT", "CANCELLED", "SENT"},
+    "CANCELLED": {"DRAFT"},
     "APPLIED_EXTERNALLY": set(),
+    # Legacy states (migration safety)
+    "PENDING_APPROVAL": {"DRAFT", "CANCELLED", "APPLIED_EXTERNALLY"},
+    "CONFIRMED": {"FIRST_CONFIRMED", "DRAFT", "CANCELLED"},
 }
 
 
@@ -62,6 +70,31 @@ def transition(db, application_id: int, current_status: str, new_status: str) ->
             f"Allowed from {current_status}: {sorted(allowed)}"
         )
     db.update_application_status(application_id, new_status)
+
+
+def content_hash(to_address: str, subject: str, body: str, cv_path: str) -> str:
+    """Hash of the exact application content. Any change invalidates approvals."""
+    import hashlib
+    h = hashlib.sha256()
+    for part in (to_address or "", subject or "", body or "", cv_path or ""):
+        h.update(part.encode("utf-8", errors="replace"))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def verify_approvals_intact(db, application_id: int, to_address: str,
+                            subject: str, body: str, cv_path: str) -> bool:
+    """True iff stored content hash matches current content (approvals still valid)."""
+    row = db.get_application(application_id)
+    if row is None:
+        return False
+    try:
+        stored = row["content_hash"]
+    except (KeyError, IndexError):
+        stored = None
+    if not stored:
+        return False
+    return stored == content_hash(to_address, subject, body, cv_path)
 
 
 def send_application_email(db, application_id: int, telegram_user_id: str,
@@ -81,11 +114,20 @@ def send_application_email(db, application_id: int, telegram_user_id: str,
         raise ApplicationStateError(f"Application {application_id} not found.")
     if app_row["telegram_user_id"] != telegram_user_id:
         raise ApplicationStateError("Application does not belong to this user.")
-    if "SENT" not in VALID_TRANSITIONS.get(app_row["status"], set()):
+    # P0 idempotency — refuse duplicate/concurrent sends
+    if app_row["status"] == "SENT":
+        raise ApplicationStateError(
+            f"Application {application_id} already SENT — refusing duplicate send.")
+    if app_row["status"] == "SENDING":
+        raise ApplicationStateError(
+            f"Application {application_id} is already SENDING — refusing concurrent send.")
+    # P0: ONLY FINAL_CONFIRMED may proceed to actual transport.
+    # Both independent approvals are required; no shortcut path exists.
+    if app_row["status"] != "FINAL_CONFIRMED":
         raise ApplicationStateError(
             f"Refusing to send: application {application_id} status is "
-            f"'{app_row['status']}', which cannot transition to SENT."
-        )
+            f"'{app_row['status']}', not FINAL_CONFIRMED. "
+            f"First approval + final confirmation are both required.")
 
     user = db.get_user(telegram_user_id)
     if user is None or not user["smtp_host"] or not user["smtp_password_encrypted"]:
@@ -114,4 +156,4 @@ def send_application_email(db, application_id: int, telegram_user_id: str,
         server.login(from_address, smtp_password)
         server.send_message(msg)
 
-    transition(db, application_id, app_row["status"], "SENT")
+    transition(db, application_id, "SENDING", "SENT")

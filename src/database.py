@@ -848,7 +848,7 @@ class Database:
                 return existing["id"]
             cur = conn.execute(
                 "INSERT INTO job_applications (job_id, telegram_user_id, status, created_at, updated_at) VALUES (?,?,?,?,?)",
-                (job_id, telegram_user_id, "PENDING_APPROVAL", now, now),
+                (job_id, telegram_user_id, "DRAFT", now, now),
             )
             return cur.lastrowid
 
@@ -874,6 +874,118 @@ class Database:
                 "INSERT INTO application_status_events (application_id, event_type, created_at) VALUES (?,?,?)",
                 (application_id, status, now),
             )
+
+    # --- P0: application content tracking + pause settings ---
+    def migrate_p0_safety(self):
+        """Add content_hash / confirmation timestamps; init pause flags. Idempotent."""
+        with self._conn() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_applications)")}
+            if "content_hash" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN content_hash TEXT")
+            if "first_confirmed_at" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN first_confirmed_at TEXT")
+            if "final_confirmed_at" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN final_confirmed_at TEXT")
+            if "draft_to" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN draft_to TEXT")
+            if "draft_subject" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN draft_subject TEXT")
+            if "draft_body" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN draft_body TEXT")
+            if "draft_cv_path" not in cols:
+                conn.execute("ALTER TABLE job_applications ADD COLUMN draft_cv_path TEXT")
+            # Map legacy PENDING_APPROVAL -> DRAFT (safe: nothing was sent under old flow
+            # without an explicit tap, and old CONFIRMED -> FIRST_CONFIRMED)
+            conn.execute("UPDATE job_applications SET status='DRAFT' WHERE status='PENDING_APPROVAL'")
+            conn.execute("UPDATE job_applications SET status='FIRST_CONFIRMED' WHERE status='CONFIRMED'")
+            # Pause flags (default: not paused)
+            for key in ("pause_scanning", "pause_applications"):
+                row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+                if row is None:
+                    conn.execute("INSERT INTO settings (key, value) VALUES (?, '0')", (key,))
+
+    def set_application_draft(self, application_id: int, to_addr: str, subject: str,
+                              body: str, cv_path: str, content_hash: str):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """UPDATE job_applications SET draft_to=?, draft_subject=?, draft_body=?,
+                   draft_cv_path=?, content_hash=?, updated_at=? WHERE id=?""",
+                (to_addr, subject, body, cv_path, content_hash, now, application_id),
+            )
+
+    def stamp_first_confirmed(self, application_id: int):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE job_applications SET first_confirmed_at=?, updated_at=? WHERE id=?",
+                (now, now, application_id),
+            )
+
+    def stamp_final_confirmed(self, application_id: int):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE job_applications SET final_confirmed_at=?, updated_at=? WHERE id=?",
+                (now, now, application_id),
+            )
+
+    def update_job_decisions(self, job_id: int, role_decision: str = None,
+                             location_decision: str = None, expiry_status: str = None,
+                             final_decision: str = None, decision_reason: str = None):
+        """P1: store the four independent decision fields on a job."""
+        sets, vals = [], []
+        for col, val in (("role_decision", role_decision),
+                         ("location_decision", location_decision),
+                         ("expiry_status", expiry_status),
+                         ("final_decision", final_decision),
+                         ("decision_reason", decision_reason)):
+            if val is not None:
+                sets.append(f"{col}=?")
+                vals.append(val)
+        if not sets:
+            return
+        vals.append(job_id)
+        with self._conn() as conn:
+            conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id=?", vals)
+
+    def get_review_queue(self, limit: int = 20):
+        """P1: YELLOW final_decision jobs awaiting owner review."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT * FROM jobs WHERE final_decision='YELLOW' "
+                "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    def log_review_decision(self, job_id: int, telegram_user_id: str,
+                            original: str, decision: str, note: str = ""):
+        """P1: record owner's review decision (never silently overrides Karkh gate)."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS review_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER,
+                    telegram_user_id TEXT, original_decision TEXT,
+                    review_decision TEXT, note TEXT, created_at TEXT)""")
+            conn.execute(
+                "INSERT INTO review_log (job_id, telegram_user_id, original_decision, "
+                "review_decision, note, created_at) VALUES (?,?,?,?,?,?)",
+                (job_id, telegram_user_id, original, decision, note, now))
+
+    def get_setting(self, key: str, default: str = "0") -> str:
+        with self._conn() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+            return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str):
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
+    def is_paused(self, key: str) -> bool:
+        return self.get_setting(key, "0") == "1"
 
     def list_user_applications(self, telegram_user_id: str, status: Optional[str] = None,
                                 limit: int = 10, offset: int = 0):

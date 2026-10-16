@@ -72,6 +72,7 @@ class TestLinkedInLayers(unittest.TestCase):
         self.assertEqual(app["status"], "APPLIED_EXTERNALLY")
 
         job_row = self.db.get_job(result.job_id)
+        # jobs table keeps its own status; LinkedIn apply must NOT touch it
         self.assertEqual(job_row["status"], "PENDING_APPROVAL")
 
     def test_two_users_can_independently_mark_applied_on_same_linkedin_job(self):
@@ -80,7 +81,7 @@ class TestLinkedInLayers(unittest.TestCase):
 
         app2_id = self.db.create_or_get_application(result.job_id, "user2")
         app2 = self.db.get_application(app2_id)
-        self.assertEqual(app2["status"], "PENDING_APPROVAL", "user2's application must be unaffected by user1's")
+        self.assertEqual(app2["status"], "DRAFT", "user2's application must be unaffected by user1's")
 
     def test_applied_externally_is_terminal(self):
         result = submit_manual_linkedin_url(self.db, "https://www.linkedin.com/jobs/view/88888")

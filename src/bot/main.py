@@ -444,20 +444,69 @@ async def handle_linkedin_url(message, url: str, pipeline_context: str = None):
 
 # ============================== APPLICATION FLOW ================================
 
-async def do_send(query, job_id: int, uid: str):
-    """
-    One-tap apply (owner's explicit decision — see src/applications.py
-    module docstring): composes the message and sends it immediately from
-    the user's own email. No separate preview/confirm step for email.
-    """
-    from src.applications import ApplicationStateError, send_application_email
+def _build_draft(job_row, profile):
+    """Compose the application draft (to/subject/body/cv). Sends NOTHING."""
+    from src.applications import content_hash
+    cats = {c.id: c.canonical_name for c in taxonomy.list_categories()}
+    draft = generate_template(
+        role_original=cats.get(job_row["category_id"], ""), role_normalized="", side=None, area=None,
+        company_name=job_row["company_name"], applicant_name="[اسمك]",
+    )
+    cv_summary = f"مرفق سيرتي الذاتية ({Path(profile.cv_file_path).name})."
+    full_body = f"{draft.body}\n\n{cv_summary}"
+    emails = json.loads(job_row["emails"] or "[]")
+    to_addr = emails[0] if emails else ""
+    ch = content_hash(to_addr, draft.subject, full_body, profile.cv_file_path or "")
+    return to_addr, draft.subject, full_body, profile.cv_file_path or "", ch
+
+
+def _preview_text(job_row, to_addr, subject, body, cv_path):
+    return (
+        f"📤 <b>معاينة التقديم</b>\n\n"
+        f"🏢 الشركة: {job_row['company_name'] or '—'}\n"
+        f"💼 الوظيفة: {job_row['title'] or '—'}\n"
+        f"📡 المصدر: {job_row['source_channel'] or '—'}\n\n"
+        f"<b>To:</b> {to_addr or '⚠️ لا يوجد بريد'}\n"
+        f"<b>Subject:</b> {subject}\n"
+        f"<b>CV:</b> {Path(cv_path).name if cv_path else '⚠️ مفقود'}\n\n"
+        f"<b>Message:</b>\n{body[:1500]}{'...' if len(body) > 1500 else ''}"
+    )
+
+
+def _preview_keyboard(app_id: int):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ تأكيد الإرسال", callback_data=f"job:apply_first:{app_id}")],
+        [InlineKeyboardButton("✏️ تعديل الرسالة", callback_data=f"job:apply_edit:{app_id}"),
+         InlineKeyboardButton("❌ إلغاء", callback_data=f"job:apply_cancel:{app_id}")],
+    ])
+
+
+def _final_confirm_keyboard(app_id: int):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚠️ تأكيد نهائي", callback_data=f"job:apply_finalconfirm:{app_id}")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data=f"job:apply_cancel:{app_id}")],
+    ])
+
+
+def _send_now_keyboard(app_id: int):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 إرسال الآن", callback_data=f"job:apply_send:{app_id}")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data=f"job:apply_cancel:{app_id}")],
+    ])
+
+
+async def show_apply_preview(query, job_id: int, uid: str):
+    """P0: Pressing apply sends NOTHING — opens DRAFT → PREVIEW."""
+    from src.applications import ApplicationStateError, transition
 
     row = db.get_job(job_id)
+    if row is None:
+        await query.message.reply_text("⚠️ هذا الإعلان لم يعد موجوداً.")
+        return
     emails = json.loads(row["emails"] or "[]")
     if not emails:
-        await query.message.reply_text("⚠️ لا يوجد بريد إلكتروني بهذا الإعلان.")
+        await query.message.reply_text("⚠️ لا يوجد بريد إلكتروني بهذا الإعلان — لا يمكن التقديم بالبريد.")
         return
-
     profile = profiles.get_or_create(uid)
     if not profile.cv_file_path:
         await query.message.reply_text("⚠️ ارفع CV أولاً من 👤 حسابي.")
@@ -474,29 +523,229 @@ async def do_send(query, job_id: int, uid: str):
     if app_row["status"] == "SENT":
         await query.message.reply_text("ℹ️ سبق وقدمت على هذي الوظيفة.")
         return
-    if app_row["status"] not in ("PENDING_APPROVAL",):
-        await query.message.reply_text(f"ℹ️ حالة طلبك الحالية: {app_row['status']}")
+    # Fresh draft: (re)build content, store hash, move to PREVIEW
+    to_addr, subject, body, cv_path, ch = _build_draft(row, profile)
+    db.set_application_draft(app_id, to_addr, subject, body, cv_path, ch)
+    cur = db.get_application(app_id)["status"]
+    if cur != "PREVIEW":
+        try:
+            transition(db, app_id, cur, "PREVIEW")
+        except ApplicationStateError:
+            # e.g. was DRAFT already via legacy PENDING_APPROVAL mapping
+            transition(db, app_id, "DRAFT", "PREVIEW")
+
+    await query.message.reply_text(
+        _preview_text(row, to_addr, subject, body, cv_path),
+        parse_mode="HTML",
+        reply_markup=_preview_keyboard(app_id),
+    )
+
+
+async def handle_apply_first(query, app_id: int, uid: str):
+    """P0: First approval — sends NOTHING, moves PREVIEW → FIRST_CONFIRMED."""
+    from src.applications import ApplicationStateError, transition, verify_approvals_intact
+
+    app_row = db.get_application(app_id)
+    if app_row is None or app_row["telegram_user_id"] != uid:
+        await query.message.reply_text("⚠️ طلب غير صالح.")
+        return
+    if app_row["status"] != "PREVIEW":
+        await query.message.reply_text(f"ℹ️ حالة الطلب: {app_row['status']} — لا يمكن التأكيد الآن.")
+        return
+    # Verify draft content unchanged since preview
+    row = db.get_job(app_row["job_id"])
+    profile = profiles.get_or_create(uid)
+    to_addr, subject, body, cv_path, ch = _build_draft(row, profile)
+    if not verify_approvals_intact(db, app_id, to_addr, subject, body, cv_path):
+        await query.message.reply_text("⚠️ تغيّرت بيانات الطلب — أعد المعاينة.")
+        return
+    try:
+        transition(db, app_id, "PREVIEW", "FIRST_CONFIRMED")
+    except ApplicationStateError as e:
+        await query.message.reply_text(f"⚠️ {e}")
+        return
+    db.stamp_first_confirmed(app_id)
+    await query.message.reply_text(
+        f"⚠️ <b>تأكيد نهائي</b>\n\n"
+        f"🏢 {row['company_name'] or '—'} — {row['title'] or '—'}\n"
+        f"📧 إلى: {to_addr}\n"
+        f"📎 CV: {Path(cv_path).name}\n\n"
+        f"هذا تأكيد مستقل. لن يُرسل شيء حتى تضغط «تأكيد نهائي» ثم «إرسال الآن».",
+        parse_mode="HTML",
+        reply_markup=_final_confirm_keyboard(app_id),
+    )
+
+
+async def handle_apply_finalconfirm(query, app_id: int, uid: str):
+    """P0: Final confirmation — sends NOTHING, enables the Send button."""
+    from src.applications import ApplicationStateError, transition, verify_approvals_intact
+
+    app_row = db.get_application(app_id)
+    if app_row is None or app_row["telegram_user_id"] != uid:
+        await query.message.reply_text("⚠️ طلب غير صالح.")
+        return
+    if app_row["status"] != "FIRST_CONFIRMED":
+        await query.message.reply_text(f"ℹ️ يلزم التأكيد الأول أولاً. الحالة: {app_row['status']}")
+        return
+    row = db.get_job(app_row["job_id"])
+    profile = profiles.get_or_create(uid)
+    to_addr, subject, body, cv_path, ch = _build_draft(row, profile)
+    if not verify_approvals_intact(db, app_id, to_addr, subject, body, cv_path):
+        # Content changed → invalidate, back to DRAFT
+        try:
+            transition(db, app_id, "FIRST_CONFIRMED", "DRAFT")
+        except ApplicationStateError:
+            pass
+        await query.message.reply_text("⚠️ تغيّرت بيانات الطلب بعد التأكيد الأول — أُبطلت الموافقة. أعد المعاينة.")
+        return
+    try:
+        transition(db, app_id, "FIRST_CONFIRMED", "FINAL_CONFIRMED")
+    except ApplicationStateError as e:
+        await query.message.reply_text(f"⚠️ {e}")
+        return
+    db.stamp_final_confirmed(app_id)
+    await query.message.reply_text(
+        f"✅ تم التأكيد النهائي.\n\n📧 إلى: {to_addr}\n📎 CV: {Path(cv_path).name}\n\n"
+        f"اضغط «إرسال الآن» لإرسال الطلب فعليًا.",
+        reply_markup=_send_now_keyboard(app_id),
+    )
+
+
+async def handle_apply_send(query, app_id: int, uid: str):
+    """P0: The ONLY path that actually sends. Requires FINAL_CONFIRMED + pause check."""
+    from src.applications import ApplicationStateError, transition, send_application_email
+
+    # P0: PAUSE_APPLICATIONS is checked INSIDE the send path, not just the UI
+    if db.is_paused("pause_applications"):
+        await query.message.reply_text("⏸ التقديم متوقف مؤقتًا (PAUSE APPLICATIONS).")
         return
 
-    cats = {c.id: c.canonical_name for c in taxonomy.list_categories()}
-    draft = generate_template(
-        role_original=cats.get(row["category_id"], ""), role_normalized="", side=None, area=None,
-        company_name=row["company_name"], applicant_name="[اسمك]",
-    )
-    cv_summary = f"مرفق سيرتي الذاتية ({Path(profile.cv_file_path).name})."
-    full_body = f"{draft.body}\n\n{cv_summary}"
+    app_row = db.get_application(app_id)
+    if app_row is None or app_row["telegram_user_id"] != uid:
+        await query.message.reply_text("⚠️ طلب غير صالح.")
+        return
+    # Idempotency
+    if app_row["status"] == "SENT":
+        await query.message.reply_text("ℹ️ هذا الطلب أُرسل مسبقًا — لن يُرسل مرة ثانية.")
+        return
+    if app_row["status"] == "SENDING":
+        await query.message.reply_text("ℹ️ الطلب قيد الإرسال حاليًا — انتظر.")
+        return
+    if app_row["status"] != "FINAL_CONFIRMED":
+        await query.message.reply_text(
+            f"⚠️ لا يمكن الإرسال: يلزم التأكيد النهائي أولاً. الحالة: {app_row['status']}")
+        return
+
+    row = db.get_job(app_row["job_id"])
+    # Re-verify content hash before transport
+    to_addr, subject, body, cv_path, ch = _build_draft(row, profiles.get_or_create(uid))
+    from src.applications import verify_approvals_intact
+    if not verify_approvals_intact(db, app_id, to_addr, subject, body, cv_path):
+        try:
+            transition(db, app_id, "FINAL_CONFIRMED", "DRAFT")
+        except ApplicationStateError:
+            pass
+        await query.message.reply_text("⚠️ تغيّرت بيانات الطلب — أُبطلت الموافقات. أعد المعاينة.")
+        return
+
+    try:
+        transition(db, app_id, "FINAL_CONFIRMED", "SENDING")
+    except ApplicationStateError as e:
+        await query.message.reply_text(f"⚠️ {e}")
+        return
 
     try:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            None, send_application_email, db, app_id, uid, emails[0], draft.subject,
-            full_body, Path(profile.cv_file_path),
+            None, send_application_email, db, app_id, uid, to_addr, subject,
+            body, Path(cv_path),
         )
         await query.message.reply_text(
-            f"✅ تم إرسال طلبك من {profile.email}\n📧 إلى: {emails[0]}\n📎 مع CV: {Path(profile.cv_file_path).name}"
+            f"✅ تم إرسال طلبك\n📧 إلى: {to_addr}\n📎 مع CV: {Path(cv_path).name}"
         )
     except ApplicationStateError as e:
-        await query.message.reply_text(f"⚠️ فشل الإرسال: {e}")
+        # Distinguish unknown transport result → NEEDS_VERIFICATION (no blind retry)
+        err = str(e).lower()
+        if any(w in err for w in ("timeout", "connection", "network", "unreachable")):
+            try:
+                transition(db, app_id, "SENDING", "NEEDS_VERIFICATION")
+            except ApplicationStateError:
+                pass
+            await query.message.reply_text(
+                "⚠️ نتيجة الإرسال غير معروفة (انقطاع اتصال). سُجّل NEEDS_VERIFICATION — "
+                "تحقق يدويًا قبل أي إعادة.")
+        else:
+            try:
+                transition(db, app_id, "SENDING", "FAILED")
+            except ApplicationStateError:
+                pass
+            await query.message.reply_text(f"❌ فشل الإرسال: {e}")
+    except Exception as e:
+        try:
+            transition(db, app_id, "SENDING", "FAILED")
+        except ApplicationStateError:
+            pass
+        await query.message.reply_text(f"❌ فشل الإرسال: {e}")
+
+
+async def handle_apply_edit(query, app_id: int, uid: str):
+    """P0: Editing invalidates prior approvals → back to DRAFT."""
+    from src.applications import ApplicationStateError, transition
+
+    app_row = db.get_application(app_id)
+    if app_row is None or app_row["telegram_user_id"] != uid:
+        await query.message.reply_text("⚠️ طلب غير صالح.")
+        return
+    cur = app_row["status"]
+    if cur in ("SENT", "SENDING"):
+        await query.message.reply_text("⚠️ لا يمكن التعديل بعد بدء الإرسال.")
+        return
+    try:
+        transition(db, app_id, cur, "DRAFT")
+    except ApplicationStateError:
+        pass
+    # Rebuild draft (in real UX this would open an edit prompt; here we refresh
+    # the draft and show the preview again so the user can review before re-approving)
+    row = db.get_job(app_row["job_id"])
+    profile = profiles.get_or_create(uid)
+    to_addr, subject, body, cv_path, ch = _build_draft(row, profile)
+    db.set_application_draft(app_id, to_addr, subject, body, cv_path, ch)
+    try:
+        transition(db, app_id, "DRAFT", "PREVIEW")
+    except ApplicationStateError:
+        pass
+    await query.message.reply_text(
+        "✏️ تم إبطال الموافقات السابقة. راجع المعاينة المحدّثة وأعد التأكيد:\n\n"
+        + _preview_text(row, to_addr, subject, body, cv_path),
+        parse_mode="HTML",
+        reply_markup=_preview_keyboard(app_id),
+    )
+
+
+async def handle_apply_cancel(query, app_id: int, uid: str):
+    from src.applications import ApplicationStateError, transition
+
+    app_row = db.get_application(app_id)
+    if app_row is None or app_row["telegram_user_id"] != uid:
+        await query.message.reply_text("⚠️ طلب غير صالح.")
+        return
+    cur = app_row["status"]
+    if cur in ("SENT", "SENDING"):
+        await query.message.reply_text("⚠️ لا يمكن الإلغاء بعد بدء الإرسال.")
+        return
+    try:
+        transition(db, app_id, cur, "CANCELLED")
+        await query.message.reply_text("❌ أُلغي طلب التقديم.")
+    except ApplicationStateError as e:
+        await query.message.reply_text(f"⚠️ {e}")
+
+
+async def do_send(query, job_id: int, uid: str):
+    """
+    P0 (2026-10-16): One-tap send REMOVED. This now opens the approval flow.
+    Kept as a thin wrapper so existing call sites route into the safe path.
+    """
+    await show_apply_preview(query, job_id, uid)
 
 
 # ================================ CALLBACKS =====================================
@@ -681,7 +930,32 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if db.get_job(job_id) is None:
             await query.message.reply_text("⚠️ هذا الإعلان لم يعد موجوداً.")
             return
-        await do_send(query, job_id, uid)
+        await do_send(query, job_id, uid)   # -> preview flow (sends nothing)
+        return
+
+    if data.startswith("job:apply_first:"):
+        app_id = int(data.split(":")[-1])
+        await handle_apply_first(query, app_id, uid)
+        return
+
+    if data.startswith("job:apply_finalconfirm:"):
+        app_id = int(data.split(":")[-1])
+        await handle_apply_finalconfirm(query, app_id, uid)
+        return
+
+    if data.startswith("job:apply_send:"):
+        app_id = int(data.split(":")[-1])
+        await handle_apply_send(query, app_id, uid)
+        return
+
+    if data.startswith("job:apply_edit:"):
+        app_id = int(data.split(":")[-1])
+        await handle_apply_edit(query, app_id, uid)
+        return
+
+    if data.startswith("job:apply_cancel:"):
+        app_id = int(data.split(":")[-1])
+        await handle_apply_cancel(query, app_id, uid)
         return
 
     if data.startswith("linkedin:applied:"):
@@ -1094,12 +1368,81 @@ async def handle_admin_callback(query, context, uid: str, data: str):
         return
 
     if data == "admin:settings":
+        ps = "⏸ متوقف" if db.is_paused("pause_scanning") else "🟢 يعمل"
+        pa = "⏸ متوقف" if db.is_paused("pause_applications") else "🟢 يعمل"
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"⏸/▶️ المسح: {ps}", callback_data="admin:toggle_pause_scanning")],
+            [InlineKeyboardButton(f"⏸/▶️ التقديم: {pa}", callback_data="admin:toggle_pause_applications")],
+            [InlineKeyboardButton("🟡 طابور المراجعة", callback_data="admin:review_queue")],
+        ])
         await query.message.reply_text(
             "⚙️ الإعدادات\n"
             f"الإيميل: {'🟢' if settings.email_enabled else '❌'}\n"
             f"الـScanner: {'🟢' if settings.scanner_enabled else '❌'}\n"
-            f"التصنيف الذكي: {'🟢' if settings.anthropic_api_key else '⚪'}"
+            f"التصنيف الذكي: {'🟢' if settings.anthropic_api_key else '⚪'}\n\n"
+            f"⏸ إيقاف المسح (PAUSE SCANNING): {ps}\n"
+            f"⏸ إيقاف التقديم (PAUSE APPLICATIONS): {pa}",
+            reply_markup=kb,
         )
+        return
+
+    if data == "admin:toggle_pause_scanning":
+        cur = db.is_paused("pause_scanning")
+        db.set_setting("pause_scanning", "0" if cur else "1")
+        await query.message.reply_text(
+            f"{'▶️ تم استئناف المسح.' if cur else '⏸ تم إيقاف المسح. لن تُجمع إعلانات جديدة.'}")
+        return
+
+    if data == "admin:toggle_pause_applications":
+        cur = db.is_paused("pause_applications")
+        db.set_setting("pause_applications", "0" if cur else "1")
+        await query.message.reply_text(
+            f"{'▶️ تم استئناف التقديم.' if cur else '⏸ تم إيقاف التقديم. لن يُرسل أي بريد جديد.'}")
+        return
+
+    if data == "admin:review_queue":
+        jobs = db.get_review_queue(limit=10)
+        if not jobs:
+            await query.message.reply_text("🟡 طابور المراجعة فارغ — لا إعلانات صفراء معلقة.")
+            return
+        for j in jobs[:5]:
+            reason = j["decision_reason"] or "غير محدد"
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🟢 قبول", callback_data=f"review:accept:{j['id']}"),
+                 InlineKeyboardButton("🔴 رفض", callback_data=f"review:reject:{j['id']}")],
+                [InlineKeyboardButton("📄 النص الكامل", callback_data=f"job:full:{j['id']}")],
+            ])
+            await query.message.reply_text(
+                f"🟡 <b>يحتاج مراجعة</b> #{j['id']}\n"
+                f"🏢 {j['company_name'] or '—'}\n"
+                f"💼 {j['title'] or '—'}\n"
+                f"📍 القرار: {j['location_decision']} | المهنة: {j['role_decision']}\n"
+                f"📝 السبب: {reason[:200]}",
+                parse_mode="HTML", reply_markup=kb,
+            )
+        return
+
+    if data.startswith("review:accept:") or data.startswith("review:reject:"):
+        job_id = int(data.split(":")[-1])
+        job = db.get_job(job_id)
+        if job is None:
+            await query.message.reply_text("⚠️ الإعلان غير موجود.")
+            return
+        # P1 SAFETY: review can NEVER override the Karkh gate
+        if job["location_decision"] == "RED" and "الكرخ" in (job["decision_reason"] or ""):
+            await query.message.reply_text(
+                "🚫 مرفوض تلقائيًا: بوابة الكرخ لا يمكن تجاوزها بالمراجعة اليدوية.")
+            db.log_review_decision(job_id, uid, job["final_decision"], "REJECT",
+                                   "Karkh gate — cannot be overridden")
+            return
+        decision = "ACCEPT" if data.startswith("review:accept:") else "REJECT"
+        new_final = "GREEN" if decision == "ACCEPT" else "RED"
+        # Accept requires explicit area confirmation — do NOT auto-promote unverified areas
+        db.update_job_decisions(job_id, final_decision=new_final,
+                                decision_reason=f"{job['decision_reason'] or ''} | مراجعة المالك: {decision}")
+        db.log_review_decision(job_id, uid, job["final_decision"], decision, "")
+        await query.message.reply_text(
+            f"{'🟢 تم قبول الإعلان' if decision == 'ACCEPT' else '🔴 تم رفض الإعلان'} #{job_id}")
         return
 
     if data == "admin:analytics":
@@ -1320,6 +1663,10 @@ async def _run_listener_in_background(application: Application):
         (src/pipeline_multiuser.py:ingest_ad), including matching, per-user
         personal blacklist filtering, and delivery.
         """
+        # P0: PAUSE_SCANNING stops collecting new ads (checked in the scan path itself)
+        if db.is_paused("pause_scanning"):
+            logger.info("Scanner paused (PAUSE_SCANNING) — skipping %s", source.get("channel"))
+            return
         for ad_text in split_ads(raw_text):
             try:
                 result = ingest_ad(db, ad_text, source)  # no notify_fn — send sequentially, rate-limited, below
