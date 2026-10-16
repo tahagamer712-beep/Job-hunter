@@ -298,10 +298,25 @@ def job_contact_keyboard(row, job_id) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(f"💬 تقديم عبر تلگرام (@{telegram_handles[0]})",
                                            url=f"https://t.me/{telegram_handles[0]}")])
 
-    rows.append([InlineKeyboardButton("📄 النص الكامل", callback_data=f"job:full:{job_id}"),
-                 InlineKeyboardButton("⭐ حفظ", callback_data=f"job:save:{job_id}")])
-    rows.append([InlineKeyboardButton("❌ تجاهل", callback_data=f"job:ignore:{job_id}"),
-                 InlineKeyboardButton("🚫 تجاهل الشركة (لي فقط)", callback_data=f"job:ignore_company:{job_id}")])
+    rows.append([InlineKeyboardButton("📄 الإعلان الكامل", callback_data=f"job:full:{job_id}"),
+                 InlineKeyboardButton("⭐ حفظ الوظيفة", callback_data=f"job:save:{job_id}")])
+    rows.append([InlineKeyboardButton("❌ تجاهل الوظيفة", callback_data=f"job:ignore:{job_id}"),
+                 InlineKeyboardButton("🚫 تجاهل الشركة", callback_data=f"job:ignore_company:{job_id}")])
+
+    # Source button
+    source_url = row.get("source_message_url")
+    if source_url:
+        rows.append([InlineKeyboardButton("🔗 فتح المصدر", url=source_url)])
+
+    # Copy email button (shows email in copyable message)
+    if emails:
+        rows.append([InlineKeyboardButton("📋 نسخ الإيميل", callback_data=f"job:copy_email:{job_id}")])
+
+    # LinkedIn button
+    linkedin = row.get("linkedin_url")
+    if linkedin:
+        rows.append([InlineKeyboardButton("💼 LinkedIn", url=linkedin)])
+
     return InlineKeyboardMarkup(rows)
 
 
@@ -641,6 +656,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         db.ignore_job_for_user(uid, job_id)
         await query.message.reply_text("❌ تم.")
+        return
+
+    if data.startswith("job:copy_email:"):
+        job_id = int(data.split(":")[-1])
+        row = db.get_job(job_id)
+        if row is None:
+            await query.message.reply_text("⚠️ هذا الإعلان لم يعد موجوداً.")
+            return
+        import json as _json
+        emails = _json.loads(row["emails"] or "[]")
+        valid = [e for e in emails if '@' in e and '.' in e.split('@')[-1]]
+        if not valid:
+            await query.message.reply_text("⚠️ لا يوجد بريد صالح في هذا الإعلان.")
+            return
+        # Show in code block for easy copying
+        await query.message.reply_text(
+            f"📧 البريد (انسخه):\n\n`{valid[0]}`",
+            parse_mode="Markdown")
         return
 
     if data.startswith("job:apply:"):
