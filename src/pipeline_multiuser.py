@@ -58,24 +58,33 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
     - FINAL_DECISION: derived — RED > EXPIRED > YELLOW > GREEN
     """
     # --- Role ---
-    ACCEPT = {"MEDICAL_REPRESENTATIVE", "SCIENTIFIC_REPRESENTATIVE", "MEDICAL_INFORMATION",
-              "PHARMACIST", "MEDICAL_DEVICES"}
-    REJECT = {"GENERAL_SALES", "COSMETICS_SALES", "TEAM_LEADER", "MARKETING", "ADMIN"}
+    ACCEPT_AR = {"مندوب طبي", "مندوب علمي", "مندوب إعلام دوائي", "صيدلي",
+                 "أجهزة طبية", "مستلزمات طبية"}
+    ACCEPT_EN = {"MEDICAL_REPRESENTATIVE", "SCIENTIFIC_REPRESENTATIVE", "MEDICAL_INFORMATION",
+                 "PHARMACIST", "MEDICAL_DEVICES", "PHARMACEUTICAL"}
+    REJECT_AR = {"مبيعات عامة", "تجميل", "عناية بالبشرة", "تسويق", "إداري"}
+    REJECT_EN = {"GENERAL_SALES", "COSMETICS_SALES", "TEAM_LEADER", "MARKETING", "ADMIN"}
     if category is None:
         role_decision = "YELLOW"
         role_reason = "الفئة غير محددة — بانتظار التصنيف"
     else:
-        key = (category.canonical_name or "").upper().replace(" ", "_")
-        if key in ACCEPT or any(a in key for a in ("MEDICAL_REP", "SCIENTIFIC", "PHARMA")):
-            # Exclude cosmetics/dental/supplement contexts even if name matches
+        cname = category.canonical_name or ""
+        key_en = cname.upper().replace(" ", "_")
+        is_accept = (cname in ACCEPT_AR or key_en in ACCEPT_EN
+                     or any(a in key_en for a in ("MEDICAL_REP", "SCIENTIFIC", "PHARMA"))
+                     or "مندوب طبي" in cname or "مندوب علمي" in cname)
+        is_reject = (cname in REJECT_AR or key_en in REJECT_EN
+                     or any(r in key_en for r in ("GENERAL_SALES", "COSMETICS"))
+                     or "تجميل" in cname)
+        if is_accept and not is_reject:
             role_decision = "GREEN"
-            role_reason = f"فئة مقبولة: {category.canonical_name}"
-        elif key in REJECT or any(r in key for r in ("GENERAL_SALES", "COSMETICS")):
+            role_reason = f"فئة مقبولة: {cname}"
+        elif is_reject:
             role_decision = "RED"
-            role_reason = f"فئة مرفوضة: {category.canonical_name}"
+            role_reason = f"فئة مرفوضة: {cname}"
         else:
             role_decision = "YELLOW"
-            role_reason = f"فئة غير مؤكدة: {category.canonical_name}"
+            role_reason = f"فئة غير مؤكدة: {cname}"
 
     # --- Location ---
     text_low = raw_text.lower()
@@ -84,22 +93,49 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
         location_decision = "RED"
         location_reason = "بوابة الكرخ: ذُكر الكرخ في الإعلان"
     elif detected_area_ids:
-        # Check if any detected area is verified Rusafa
-        rusafa_hit = False
+        # Walk parent chain: side is determined by rusafa/karkh ancestry
+        def _side_of(aid):
+            try:
+                node = tree.get(aid)
+                seen = set()
+                while node and node.id not in seen:
+                    seen.add(node.id)
+                    nid = (node.id or "").lower()
+                    if nid == "rusafa" or nid.startswith("rusafa"):
+                        return "RUSAFA"
+                    if nid == "karkh" or nid.startswith("karkh"):
+                        return "KARKH"
+                    node = tree.get(node.parent_id) if node.parent_id else None
+            except Exception:
+                pass
+            return None
+        sides = {_side_of(aid) for aid in detected_area_ids}
+        sides.discard(None)
+        # Also check node verification status
+        verified_rusafa = False
         for aid in detected_area_ids:
             try:
                 node = tree.get(aid)
-                if node and getattr(node, "side", "").upper() == "RUSAFA":
-                    rusafa_hit = True
+                if node and _side_of(aid) == "RUSAFA" and node.status == "verified":
+                    verified_rusafa = True
                     break
             except Exception:
                 pass
-        if rusafa_hit:
+        if "KARKH" in sides and "RUSAFA" in sides:
+            location_decision = "YELLOW"
+            location_reason = "إعلان مختلط: رصافة وكرخ معًا — للمراجعة"
+        elif "KARKH" in sides:
+            location_decision = "RED"
+            location_reason = "بوابة الكرخ: منطقة كرخ مكتشفة"
+        elif verified_rusafa:
             location_decision = "GREEN"
             location_reason = "منطقة رصافة موثقة"
+        elif "RUSAFA" in sides:
+            location_decision = "YELLOW"
+            location_reason = "منطقة رصافة لكن غير موثقة — للمراجعة"
         else:
             location_decision = "YELLOW"
-            location_reason = "منطقة مكتشفة لكن غير موثقة كرصافة"
+            location_reason = "منطقة مكتشفة لكن الجانب غير محدد — للمراجعة"
     elif "بغداد" in raw_text or "baghdad" in text_low:
         location_decision = "YELLOW"
         location_reason = "ذُكرت بغداد دون تحديد الجانب — للمراجعة"
@@ -127,7 +163,8 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
             if isinstance(pa, str):
                 pa = datetime.fromisoformat(pa.replace("Z", "+00:00"))
             age_h = (datetime.now(timezone.utc) - pa).total_seconds() / 3600
-            if age_h >= 72:
+            if age_h >= 72 or age_h < -1:
+                # >=72h old, or more than 1h in the future (clock skew tolerance)
                 fresh = False
         except Exception:
             fresh = False  # unparseable date = not provably fresh

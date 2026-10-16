@@ -1374,6 +1374,7 @@ async def handle_admin_callback(query, context, uid: str, data: str):
             [InlineKeyboardButton(f"⏸/▶️ المسح: {ps}", callback_data="admin:toggle_pause_scanning")],
             [InlineKeyboardButton(f"⏸/▶️ التقديم: {pa}", callback_data="admin:toggle_pause_applications")],
             [InlineKeyboardButton("🟡 طابور المراجعة", callback_data="admin:review_queue")],
+            [InlineKeyboardButton("📍 إدارة المناطق", callback_data="admin:locations")],
         ])
         await query.message.reply_text(
             "⚙️ الإعدادات\n"
@@ -1443,6 +1444,26 @@ async def handle_admin_callback(query, context, uid: str, data: str):
         db.log_review_decision(job_id, uid, job["final_decision"], decision, "")
         await query.message.reply_text(
             f"{'🟢 تم قبول الإعلان' if decision == 'ACCEPT' else '🔴 تم رفض الإعلان'} #{job_id}")
+        return
+
+    if data == "admin:locations":
+        from src.location_tree import LocationTree
+        tree = LocationTree()
+        # Count by side via parent chain
+        rusafa_n = karkh_n = 0
+        try:
+            all_nodes = tree.all_nodes() if hasattr(tree, "all_nodes") else []
+        except Exception:
+            all_nodes = []
+        verified = sum(1 for n in all_nodes if getattr(n, "status", "") == "verified")
+        await query.message.reply_text(
+            f"📍 إدارة المناطق\n\n"
+            f"مناطق موثقة: {verified}\n\n"
+            f"لإضافة منطقة جديدة أرسل:\n"
+            f"`/addarea <الاسم بالعربية> | <الاسم بالإنجليزية> | rusafa|karkh`\n\n"
+            f"المنطقة الجديدة تُضاف بحالة unverified وتحتاج اعتمادًا صريحًا.",
+            parse_mode="Markdown",
+        )
         return
 
     if data == "admin:analytics":
