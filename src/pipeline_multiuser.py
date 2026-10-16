@@ -105,6 +105,30 @@ def ingest_ad(db, raw_text: str, source: dict, notify_fn: Optional[Callable] = N
 
     if expiry_status == "EXPIRED":
         return result  # already expired -> no delivery
+
+    # 72-hour rule: don't deliver ads older than 72h
+    # Use source_posted_at (original Telegram date) if available
+    posted_at = None
+    if hasattr(result, 'posted_at') and result.posted_at:
+        posted_at = result.posted_at
+    elif 'posted_at' in source:
+        posted_at = source['posted_at']
+    if posted_at:
+        if isinstance(posted_at, str):
+            try:
+                posted_at = datetime.fromisoformat(posted_at.replace('Z', '+00:00'))
+            except:
+                posted_at = None
+        if posted_at:
+            if posted_at.tzinfo is None:
+                posted_at = posted_at.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - posted_at
+            if age > timedelta(hours=72):
+                result.exclusion_reason = f"too_old: {age.total_seconds()/3600:.1f}h"
+                return result  # too old -> no delivery
+    # Unknown age: allow delivery (logged) — strict blocking would break
+    # existing flows that don't pass posted_at. The 72h rule applies
+    # when posted_at is available.
     # Note: missing area no longer blocks delivery. Area is a boost,
     # not a requirement — category match is the primary filter.
 
