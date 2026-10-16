@@ -108,18 +108,21 @@ class TaxonomyStore:
             name = best.canonical_name
             # Medical rep must NOT be for cleaning/juice/shipping
             if name == 'مندوب طبي':
-                bad = ['منظفات', 'منظف', 'كاش فان', 'عصائر', 'عصير', 'شحن', 
-                       'توصيل', 'مياه معدنية', 'سكن كير', 'كوزمتك']
+                bad = [normalize_for_matching(x) for x in
+                       ['منظفات', 'منظف', 'كاش فان', 'عصائر', 'عصير', 'شحن',
+                        'توصيل', 'مياه معدنية', 'سكن كير', 'كوزمتك']]
                 if any(b in match_text for b in bad):
                     return None  # Not a pharma medical rep
                 # Must have pharma context
-                good = ['أدوية', 'دواء', 'صيدل', 'طبيب', 'مكتب علمي', 
-                        'شركة أدوية', 'medical', 'pharma']
+                good = [normalize_for_matching(x) for x in
+                        ['أدوية', 'دواء', 'صيدل', 'طبيب', 'مكتب علمي',
+                         'شركة أدوية', 'medical', 'pharma']]
                 if not any(g in match_text for g in good):
                     return None
             # Pharmacist must NOT be teacher/doctor
             elif name == 'صيدلي':
-                bad = ['مدرس', 'معلم', 'طبيبة نسائية', 'طبيب أسنان', 'حارس']
+                bad = [normalize_for_matching(x) for x in
+                       ['مدرس', 'معلم', 'طبيبة نسائية', 'طبيب أسنان', 'حارس']]
                 if any(b in match_text for b in bad):
                     return None
         return best

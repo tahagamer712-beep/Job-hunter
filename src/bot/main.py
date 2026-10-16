@@ -213,34 +213,68 @@ async def send_area_picker(message, uid: str, context: ContextTypes.DEFAULT_TYPE
 # ============================== JOB CARD (multi-user) ==========================
 
 def render_job_card(row, matched_areas: set = None, uid: str = None) -> str:
+    """Enhanced job card per user spec - shows all available fields."""
     category_name = "غير مصنفة"
     if row["category_id"]:
         cats = {c.id: c.canonical_name for c in taxonomy.list_categories()}
         category_name = cats.get(row["category_id"], "غير معروفة")
 
-    lines = [f"💼 {category_name}"]
-    lines.append(f"🏢 {row['company_name'] or 'الشركة غير معروفة'}")
-
+    lines = ["🟢 MATCHED JOB", "", f"💼 {category_name}"]
+    
+    # Company
+    if row['company_name']:
+        lines.append(f"🏢 الشركة: {row['company_name']}")
+    
+    # Location
     area_ids = json.loads(row["detected_area_ids"] or "[]")
     area_names = [tree.get(a).name_ar for a in area_ids if tree.get(a)]
+    city = row.get("city") or "بغداد"
     if area_names:
-        lines.append(f"📍 {', '.join(area_names)}")
-
+        lines.append(f"📍 الموقع: {city} — {', '.join(area_names)}")
+    elif row.get("side"):
+        lines.append(f"📍 الموقع: {city} — {row['side']}")
+    
+    # Requirements (from raw text excerpt - not truncated silently)
+    # Salary
     if row["salary_min"] or row["salary_max"]:
-        lines.append(f"💰 {row['salary_min'] or '؟'}-{row['salary_max'] or '؟'} {row['currency'] or ''}")
-
-    if row["deadline"]:
-        lines.append(f"🗓 آخر موعد: {row['deadline']}" + (" (منتهي)" if row["expiry_status"] == "EXPIRED" else ""))
-
-    if matched_areas:
-        matched_names = [tree.get(a).name_ar for a in matched_areas if tree.get(a)]
-        lines.append(f"🤔 وصلتك لأنها بمنطقة: {', '.join(matched_names)}")
-
+        lines.append(f"💰 الراتب: {row['salary_min'] or '؟'}-{row['salary_max'] or '؟'} {row['currency'] or ''}")
+    
+    # Work hours
+    if row.get("work_hours"):
+        lines.append(f"🕒 الدوام: {row['work_hours']}")
+    
+    # Posted date
+    if row.get("source_date"):
+        lines.append(f"📅 تاريخ الإعلان: {row['source_date'][:10]}")
+    
+    # Contact - emails (full, validated)
+    emails = json.loads(row["emails"] or "[]")
+    valid_emails = [e for e in emails if '@' in e and '.' in e.split('@')[-1] and len(e) > 5]
+    if valid_emails:
+        lines.append(f"📧 البريد: {valid_emails[0]}")
+    
+    # Phones (full, validated)
+    phones = json.loads(row["phones"] or row["whatsapp"] or "[]")
+    valid_phones = [p for p in phones if len(''.join(c for c in p if c.isdigit())) >= 7]
+    if valid_phones:
+        lines.append(f"📞 الهاتف: {valid_phones[0]}")
+    
+    # Match score
     if uid:
-        strength = db.get_delivery_match_strength(row["id"], uid)
-        lines.append(f"🎯 درجة التطابق: {strength}%")
-
-    lines.append(f"#{row['id']}")
+        try:
+            strength = db.get_delivery_match_strength(row["id"], uid)
+            if strength:
+                lines.append(f"🎯 Match Score: {strength}%")
+        except:
+            pass
+    
+    # Source
+    if row.get("source_channel"):
+        lines.append(f"🔗 المصدر: {row['source_channel']}")
+    if row.get("source_message_url"):
+        lines.append(f"   {row['source_message_url']}")
+    
+    lines.append(f"\n#{row['id']}")
     return "\n".join(lines)
 
 
