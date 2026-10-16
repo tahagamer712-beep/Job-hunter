@@ -103,8 +103,10 @@ def ingest_ad(db, raw_text: str, source: dict, notify_fn: Optional[Callable] = N
         result.delivered_to = []
         return result
 
-    if not detected_area_ids or expiry_status == "EXPIRED":
-        return result  # classified but no confirmed area, or already expired -> no delivery
+    if expiry_status == "EXPIRED":
+        return result  # already expired -> no delivery
+    # Note: missing area no longer blocks delivery. Area is a boost,
+    # not a requirement — category match is the primary filter.
 
     profiles_store = UserProfileStore(db)
     all_profiles = profiles_store.list_all()

@@ -81,12 +81,21 @@ def find_matching_users(job_category_id: int, job_area_ids: Set[str],
     for profile in all_user_profiles:
         if job_category_id not in profile.job_category_ids:
             continue
-        matched_areas = {
-            user_area for user_area in profile.area_node_ids
-            for job_area in job_area_ids
-            if tree.is_related(job_area, user_area)
-        }
-        if matched_areas:
+        # Area logic:
+        # - User has no area prefs -> match on category (no area filter)
+        # - Job has no area -> match on category (can't filter)
+        # - Both have areas -> require overlap
+        if not profile.area_node_ids or not job_area_ids:
+            matched_areas = set()  # no area constraint
+        else:
+            matched_areas = {
+                user_area for user_area in profile.area_node_ids
+                for job_area in job_area_ids
+                if tree.is_related(job_area, user_area)
+            }
+            if not matched_areas:
+                continue  # explicit area prefs don't overlap -> skip
+        # Category matched (checked above); area is boost not gate
             strength = compute_match_strength(job_area_ids, list(matched_areas), tree)
             matches.append(MatchResult(telegram_user_id=profile.telegram_user_id,
                                         matched_areas=matched_areas, match_strength=strength))
