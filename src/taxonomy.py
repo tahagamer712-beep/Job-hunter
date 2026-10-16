@@ -39,6 +39,15 @@ class PendingTitle:
     created_at: str
 
 
+# Patterns that disqualify a text from being a job ad at all.
+# Checked (normalized) before any category matching.
+_EXCLUSION_PATTERNS = [
+    "كورس", "دوره تدريبيه", "دورة تدريبية",
+    "اعلان تسويقي", "إعلان تسويقي",
+    "خصم", "عرض خاص", "تخفيضات",
+    "منحه دراسيه", "منحة دراسية",
+]
+
 class TaxonomyStore:
     """
     Thin wrapper around Database's taxonomy tables (see database.py additions).
@@ -80,6 +89,10 @@ class TaxonomyStore:
         Returns None if nothing matches (caller queues a pending title).
         """
         match_text = normalize_for_matching(raw_text)
+        # Exclusion: course/training/marketing ads are not jobs
+        for excl in _EXCLUSION_PATTERNS:
+            if excl in match_text:
+                return None
         best = None
         best_len = 0
         for category in self.list_categories():
