@@ -95,7 +95,7 @@ _SALARY_RANGE_RE = re.compile(
     re.IGNORECASE,
 )
 _TIME_RANGE_RE = re.compile(
-    r"(?<!\d)(\d{1,2})(?::(\d{2}))?\s*(am|pm|صباحا|مساء)?\s*(?:-|–|to|الى)\s*"
+    r"(?<!\d)(\d{1,2})(?::(\d{2}))?\s*(am|pm|صباحا|مساء)?\s*(?:-|–|to|الى|الي)\s*"
     r"(\d{1,2})(?::(\d{2}))?\s*(am|pm|صباحا|مساء)?(?!\d)"
 )
 
@@ -160,12 +160,24 @@ def extract_compensation(raw_text: str) -> CompensationInfo:
     if "target" in match_text or "تارگت" in match_text or "هدف مبيعات" in match_text:
         comp.target_required = True
 
+    # Work hours: only extract with explicit time format or work context.
+    # Never extract from bare number ranges (phones, salaries, etc.)
+    work_context = any(w in match_text for w in [
+        "دوام", "working hours", "shift", "وقت العمل", "ساعات العمل",
+        "full time", "part time", "دوام كامل", "دوام جزئي",
+    ])
     tm = _TIME_RANGE_RE.search(normalized_digits_text)
     if tm:
         h1, m1, mer1, h2, m2, mer2 = tm.groups()
+        # Require explicit time indicators OR work context
+        has_time_fmt = bool(m1 or m2 or mer1 or mer2 or ":" in tm.group(0))
+        if not (has_time_fmt or work_context):
+            tm = None  # reject: likely phone/salary/other numbers
+        # Reject if looks like phone fragment (starts with 07)
+        if tm and tm.group(0).strip().startswith("07"):
+            tm = None
+    if tm:
         if _valid_time_component(int(h1), m1) and _valid_time_component(int(h2), m2):
-            # If only one side has am/pm, infer the other from context where possible;
-            # otherwise leave as-is rather than guessing (Section 25: never invent).
             comp.work_start = _to_24h(int(h1), m1, mer1 or mer2)
             comp.work_end = _to_24h(int(h2), m2, mer2 or mer1)
             try:
