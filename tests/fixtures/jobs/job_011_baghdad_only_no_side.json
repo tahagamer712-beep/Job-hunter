@@ -1,0 +1,9 @@
+{
+  "id": "job_011_baghdad_only_no_side",
+  "raw_text": "Medical Representative — Baghdad. Send your CV to apply.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "YELLOW",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "YELLOW"
+}

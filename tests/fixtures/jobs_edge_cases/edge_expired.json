@@ -1,0 +1,11 @@
+{
+  "id": "edge_expired",
+  "raw_text_template": "Medical Representative — Al Rusafa, Baghdad. Application deadline: {deadline}",
+  "deadline_offset_days": -30,
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "GREEN",
+  "expected_expiry_status": "EXPIRED",
+  "expected_final_decision": "EXPIRED",
+  "note": "deadline is computed at test-run time as today-30 days, formatted DD/MM/YYYY, so this fixture never goes stale."
+}

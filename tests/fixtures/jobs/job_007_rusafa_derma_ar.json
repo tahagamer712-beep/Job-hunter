@@ -1,0 +1,10 @@
+{
+  "id": "job_007_rusafa_derma_ar",
+  "raw_text": "مطلوب مندوب علمي جانب الرصافة - جلدية وتجميل طبي.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_side": "RUSAFA",
+  "expected_location_decision": "GREEN",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "GREEN"
+}

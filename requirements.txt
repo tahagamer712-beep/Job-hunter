@@ -1,0 +1,18 @@
+# Core bot
+python-telegram-bot>=21.0
+
+# Telegram Userbot / Listener (Section 7) — for channel scanning only.
+# Do NOT skip Section 7.1's rate-limit/backoff requirements when using this.
+telethon>=1.36
+
+# Optional: only needed if you wire a real AI classifier (src/role_classifier.py AIRoleClassifier)
+anthropic>=0.34
+
+# Excel export for admin backups (src/backup.py)
+openpyxl>=3.1
+
+# Per-user App Password encryption at rest (src/email_credentials.py)
+cryptography>=42.0
+
+# Optional: only needed if you implement Location Management "reload from file"
+# without a restart (not required for the stdlib json approach already used)

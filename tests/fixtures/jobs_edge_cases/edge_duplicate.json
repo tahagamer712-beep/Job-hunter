@@ -1,0 +1,6 @@
+{
+  "id": "edge_duplicate",
+  "raw_text": "مطلوب Medical representative للعمل في مدينة الصدر - بغداد. يشترط خبرة في المجال الطبي.",
+  "duplicate_of": "job_001_rusafa_ar",
+  "note": "Exact-text duplicate of job_001_rusafa_ar; used to test duplicate_detector.find_duplicate against an existing-jobs list, not run through the classification assertions."
+}

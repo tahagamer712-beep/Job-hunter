@@ -1,0 +1,9 @@
+{
+  "id": "job_005_outside_baghdad",
+  "raw_text": "مطلوب مندوب علمي للعمل في محافظتي النجف وكربلاء",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "RED",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "RED"
+}

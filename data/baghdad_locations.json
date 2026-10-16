@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "description": "Verified Location Knowledge Base for Baghdad Rusafa/Karkh classification. The agent/classifier must NEVER add an entry to RUSAFA or KARKH with status='verified' without explicit admin confirmation. New unverified mentions should be added with status='ambiguous' and reviewed via the Location Management admin UI.",
+    "sides": ["RUSAFA", "KARKH"],
+    "statuses": ["verified", "likely", "ambiguous", "unknown"]
+  },
+  "areas": [
+    {
+      "name_ar": "الرصافة",
+      "name_en": "Al-Rusafa",
+      "aliases": ["الرصافة", "رصافة", "جانب الرصافة", "Rusafa", "Al Rusafa", "Al-Rusafa", "Russafa", "Al Russafa"],
+      "side": "RUSAFA",
+      "confidence": 1.0,
+      "status": "verified"
+    },
+    {
+      "name_ar": "مدينة الصدر",
+      "name_en": "Sadr City",
+      "aliases": ["مدينة الصدر", "الصدر", "مدينة صدام", "Sadr City", "Sadr", "Al Sadr City"],
+      "side": "RUSAFA",
+      "confidence": 1.0,
+      "status": "verified"
+    },
+    {
+      "name_ar": "الشعب",
+      "name_en": "Al-Shaab",
+      "aliases": ["الشعب", "حي الشعب", "Al Shaab", "Al-Shaab", "Shaab"],
+      "side": "RUSAFA",
+      "confidence": 0.95,
+      "status": "verified"
+    },
+    {
+      "name_ar": "الأعظمية",
+      "name_en": "Al-Adhamiyah",
+      "aliases": ["الأعظمية", "الاعظمية", "Al Adhamiyah", "Adhamiyah", "Al-Adhamiyah"],
+      "side": "RUSAFA",
+      "confidence": 0.9,
+      "status": "verified",
+      "note": "Adhamiyah sits on the Rusafa (east) bank of the Tigris despite historically mixed administrative classification; verify locally before relying on this for edge cases."
+    },
+    {
+      "name_ar": "الصليخ",
+      "name_en": "Al-Sulaikh",
+      "aliases": ["الصليخ", "Al Sulaikh", "Sulaikh"],
+      "side": "RUSAFA",
+      "confidence": 0.85,
+      "status": "verified"
+    },
+    {
+      "name_ar": "الحسينية",
+      "name_en": "Al-Husseiniya",
+      "aliases": ["الحسينية", "Al Husseiniya", "Husseiniya"],
+      "side": "RUSAFA",
+      "confidence": 0.85,
+      "status": "verified"
+    },
+    {
+      "name_ar": "المغرب",
+      "name_en": "Al-Maghrib",
+      "aliases": ["المغرب", "حي المغرب", "Al Maghrib"],
+      "side": "RUSAFA",
+      "confidence": 0.7,
+      "status": "ambiguous",
+      "note": "Not yet independently verified — treat as ambiguous until confirmed via admin panel."
+    },
+    {
+      "name_ar": "ساحة بيروت",
+      "name_en": "Beirut Square",
+      "aliases": ["ساحة بيروت", "بيروت سكوير", "Beirut Square", "Beirut Sq"],
+      "side": "RUSAFA",
+      "confidence": 0.9,
+      "status": "verified",
+      "note": "Only THIS specific alias (Beirut Square / ساحة بيروت) resolves to Rusafa. A bare 'Beirut'/'بيروت' with no square/area qualifier must NOT match this entry — see role_classifier tests."
+    },
+    {
+      "name_ar": "الكرخ",
+      "name_en": "Al-Karkh",
+      "aliases": ["الكرخ", "كرخ بغداد", "جانب الكرخ", "Karkh", "Al Karkh", "North Karkh", "South Karkh", "Karhk", "Al Karhk", "North Al Karhk", "South Al Karhk"],
+      "side": "KARKH",
+      "confidence": 1.0,
+      "status": "verified"
+    },
+    {
+      "name_ar": "المنصور",
+      "name_en": "Al-Mansour",
+      "aliases": ["المنصور", "Al Mansour", "Mansour"],
+      "side": "KARKH",
+      "confidence": 1.0,
+      "status": "verified"
+    },
+    {
+      "name_ar": "الكاظمية",
+      "name_en": "Al-Kadhimiya",
+      "aliases": ["الكاظمية", "Al Kadhimiya", "Kadhimiya", "Kadhimiyah"],
+      "side": "KARKH",
+      "confidence": 0.95,
+      "status": "verified"
+    }
+  ]
+}

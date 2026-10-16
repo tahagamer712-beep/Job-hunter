@@ -1,0 +1,80 @@
+{
+  "_meta": {
+    "description": "Hierarchical Baghdad Location Tree. Each node has a unique id, a parent_id (null for top-level sides), and a status. New nodes are added as 'ambiguous' by default — only an explicit admin action promotes a node to 'verified' (Governing Resolution Rule 2). Matching only ever resolves a node as a confirmed hit if status='verified'. Levels: side (rusafa/karkh) -> sub-region (north/south/central) -> major area -> sub-neighborhood. The exact sub-region placement of each major area below is a reasonable starting point, NOT authoritative geography — verify and reorganize via the admin Location Management panel (nodes can be moved to any parent at any time).",
+    "statuses": ["verified", "likely", "ambiguous", "unknown"]
+  },
+  "nodes": [
+    {"id": "rusafa", "parent_id": null, "name_ar": "الرصافة", "name_en": "Al-Rusafa",
+     "aliases": ["الرصافة", "رصافة", "جانب الرصافة", "رصافة كلها", "Rusafa", "Al Rusafa", "Al-Rusafa", "Russafa", "Al Russafa", "All Rusafa"],
+     "status": "verified", "confidence": 1.0},
+
+    {"id": "rusafa_north", "parent_id": "rusafa", "name_ar": "الرصافة الشمالية", "name_en": "North Rusafa",
+     "aliases": ["رصافة شمالي", "الرصافة الشمالية", "شمال الرصافة", "North Rusafa", "Rusafa North", "Northern Rusafa"],
+     "status": "verified", "confidence": 0.8,
+     "note": "Placement of major areas under this node needs admin verification."},
+    {"id": "rusafa_south", "parent_id": "rusafa", "name_ar": "الرصافة الجنوبية", "name_en": "South Rusafa",
+     "aliases": ["رصافة جنوبي", "الرصافة الجنوبية", "جنوب الرصافة", "South Rusafa", "Rusafa South", "Southern Rusafa"],
+     "status": "verified", "confidence": 0.8,
+     "note": "Placement of major areas under this node needs admin verification."},
+    {"id": "rusafa_central", "parent_id": "rusafa", "name_ar": "وسط الرصافة", "name_en": "Central Rusafa",
+     "aliases": ["وسط الرصافة", "رصافة وسط", "Central Rusafa", "Rusafa Central", "Midtown Rusafa"],
+     "status": "verified", "confidence": 0.8,
+     "note": "Placement of major areas under this node needs admin verification."},
+
+    {"id": "sadr_city", "parent_id": "rusafa_north", "name_ar": "مدينة الصدر", "name_en": "Sadr City",
+     "aliases": ["مدينة الصدر", "الصدر", "مدينة صدام", "Sadr City", "Sadr", "Al Sadr City"],
+     "status": "verified", "confidence": 1.0},
+    {"id": "al_falah", "parent_id": "sadr_city", "name_ar": "الفلاح", "name_en": "Al-Falah",
+     "aliases": ["الفلاح", "حي الفلاح", "Al Falah", "Al-Falah"],
+     "status": "verified", "confidence": 0.9},
+    {"id": "al_dakhil", "parent_id": "sadr_city", "name_ar": "الداخل", "name_en": "Al-Dakhil",
+     "aliases": ["الداخل", "حي الداخل", "Al Dakhil", "Al-Dakhil"],
+     "status": "verified", "confidence": 0.85},
+    {"id": "orzdi", "parent_id": "sadr_city", "name_ar": "أورزدي", "name_en": "Orzdi",
+     "aliases": ["أورزدي", "اورزدي", "Orzdi", "Orzdy"],
+     "status": "verified", "confidence": 0.85},
+
+    {"id": "al_shaab", "parent_id": "rusafa_north", "name_ar": "الشعب", "name_en": "Al-Shaab",
+     "aliases": ["الشعب", "حي الشعب", "Al Shaab", "Al-Shaab", "Shaab"],
+     "status": "verified", "confidence": 0.95},
+    {"id": "al_husseiniya", "parent_id": "rusafa_north", "name_ar": "الحسينية", "name_en": "Al-Husseiniya",
+     "aliases": ["الحسينية", "Al Husseiniya", "Husseiniya"],
+     "status": "verified", "confidence": 0.85},
+
+    {"id": "al_adhamiyah", "parent_id": "rusafa_central", "name_ar": "الأعظمية", "name_en": "Al-Adhamiyah",
+     "aliases": ["الأعظمية", "الاعظمية", "Al Adhamiyah", "Adhamiyah", "Al-Adhamiyah"],
+     "status": "verified", "confidence": 0.9},
+    {"id": "beirut_square", "parent_id": "rusafa_central", "name_ar": "ساحة بيروت", "name_en": "Beirut Square",
+     "aliases": ["ساحة بيروت", "بيروت سكوير", "Beirut Square", "Beirut Sq"],
+     "status": "verified", "confidence": 0.9,
+     "note": "Only this specific alias resolves — a bare 'Beirut' with no square/area qualifier does not."},
+
+    {"id": "al_sulaikh", "parent_id": "rusafa_south", "name_ar": "الصليخ", "name_en": "Al-Sulaikh",
+     "aliases": ["الصليخ", "Al Sulaikh", "Sulaikh"],
+     "status": "verified", "confidence": 0.85},
+    {"id": "al_maghrib", "parent_id": "rusafa_south", "name_ar": "المغرب", "name_en": "Al-Maghrib",
+     "aliases": ["المغرب", "حي المغرب", "Al Maghrib"],
+     "status": "ambiguous", "confidence": 0.7},
+
+    {"id": "karkh", "parent_id": null, "name_ar": "الكرخ", "name_en": "Al-Karkh",
+     "aliases": ["الكرخ", "كرخ بغداد", "جانب الكرخ", "كرخ كلها", "Karkh", "Al Karkh", "Al-Karkh", "All Karkh",
+                 "Karhk", "Al Karhk"],
+     "status": "verified", "confidence": 1.0},
+
+    {"id": "karkh_north", "parent_id": "karkh", "name_ar": "الكرخ الشمالية", "name_en": "North Karkh",
+     "aliases": ["كرخ شمالي", "الكرخ الشمالية", "شمال الكرخ", "North Karkh", "Karkh North", "North Al Karhk"],
+     "status": "verified", "confidence": 0.8,
+     "note": "Placement of major areas under this node needs admin verification."},
+    {"id": "karkh_south", "parent_id": "karkh", "name_ar": "الكرخ الجنوبية", "name_en": "South Karkh",
+     "aliases": ["كرخ جنوبي", "الكرخ الجنوبية", "جنوب الكرخ", "South Karkh", "Karkh South", "South Al Karhk"],
+     "status": "verified", "confidence": 0.8,
+     "note": "Placement of major areas under this node needs admin verification."},
+
+    {"id": "al_mansour", "parent_id": "karkh_south", "name_ar": "المنصور", "name_en": "Al-Mansour",
+     "aliases": ["المنصور", "Al Mansour", "Mansour"],
+     "status": "verified", "confidence": 1.0},
+    {"id": "al_kadhimiya", "parent_id": "karkh_north", "name_ar": "الكاظمية", "name_en": "Al-Kadhimiya",
+     "aliases": ["الكاظمية", "Al Kadhimiya", "Kadhimiya", "Kadhimiyah"],
+     "status": "verified", "confidence": 0.95}
+  ]
+}

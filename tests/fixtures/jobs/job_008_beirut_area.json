@@ -1,0 +1,11 @@
+{
+  "id": "job_008_beirut_area",
+  "raw_text": "Medical Representative needed near Beirut Square, Baghdad.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_side": "RUSAFA",
+  "expected_location_decision": "GREEN",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "GREEN",
+  "note": "Must match via the specific 'Beirut Square' verified alias, not a bare 'Beirut' mention."
+}

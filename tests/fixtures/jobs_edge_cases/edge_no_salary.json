@@ -1,0 +1,10 @@
+{
+  "id": "edge_no_salary",
+  "raw_text": "Medical Representative — Rusafa, Baghdad. Salary discussed at interview.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "GREEN",
+  "expected_final_decision": "GREEN",
+  "expected_salary_min": null,
+  "expected_salary_max": null
+}

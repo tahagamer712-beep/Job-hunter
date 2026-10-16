@@ -1,0 +1,10 @@
+{
+  "id": "job_001_rusafa_ar",
+  "raw_text": "مطلوب Medical representative للعمل في مدينة الصدر - بغداد. يشترط خبرة في المجال الطبي.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_side": "RUSAFA",
+  "expected_location_decision": "GREEN",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "GREEN"
+}

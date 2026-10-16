@@ -1,0 +1,9 @@
+{
+  "id": "edge_no_company",
+  "raw_text": "مطلوب مندوب علمي للعمل في الرصافة - بغداد. للتواصل: 07711112222",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "GREEN",
+  "expected_final_decision": "GREEN",
+  "expected_company_name": null
+}

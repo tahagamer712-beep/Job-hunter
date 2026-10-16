@@ -1,0 +1,9 @@
+{
+  "id": "job_004_karkh",
+  "raw_text": "Medical Representative required - North Karkh, Baghdad.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "RED",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "RED"
+}

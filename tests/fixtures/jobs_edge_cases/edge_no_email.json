@@ -1,0 +1,10 @@
+{
+  "id": "edge_no_email",
+  "raw_text": "مطلوب مندوب علمي - الرصافة بغداد. للتواصل واتساب 07701234567 فقط، بدون ايميل.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "GREEN",
+  "expected_final_decision": "GREEN",
+  "expected_has_email": false,
+  "expected_has_whatsapp": true
+}

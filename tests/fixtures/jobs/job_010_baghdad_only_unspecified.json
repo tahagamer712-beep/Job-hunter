@@ -1,0 +1,9 @@
+{
+  "id": "job_010_baghdad_only_unspecified",
+  "raw_text": "مطلوب مندوب علمي للعمل في بغداد. يرجى ارسال السيرة الذاتية.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "YELLOW",
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "YELLOW"
+}

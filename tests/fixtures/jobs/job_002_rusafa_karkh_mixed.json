@@ -1,0 +1,10 @@
+{
+  "id": "job_002_rusafa_karkh_mixed",
+  "raw_text": "Medical Representative needed - Baghdad North Al Rusafa / South Al Karkh coverage area.",
+  "expected_role_normalized": "MEDICAL_REPRESENTATIVE",
+  "expected_role_decision": "GREEN",
+  "expected_location_decision": "YELLOW",
+  "expected_is_partial_location": true,
+  "expected_expiry_status": "UNKNOWN",
+  "expected_final_decision": "YELLOW"
+}
