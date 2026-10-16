@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.database import Database  # noqa: E402
 from src.invites import AccessDecision, InviteManager  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_invites.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_invites.db")
 
 
 class TestInviteSystem(unittest.TestCase):

@@ -12,7 +12,7 @@ from src.reprocessor import reprocess_archive  # noqa: E402
 from src.taxonomy import TaxonomyStore  # noqa: E402
 from src.user_profiles import UserProfileStore  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_reprocessor.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_reprocessor.db")
 SOURCE = {"platform": "manual", "channel": None, "message_id": "1", "url": None, "date": "2026-08-30"}
 
 

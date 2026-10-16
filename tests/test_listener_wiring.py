@@ -14,7 +14,7 @@ from src.pipeline_multiuser import ingest_ad  # noqa: E402
 from src.taxonomy import TaxonomyStore  # noqa: E402
 from src.user_profiles import UserProfileStore  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_listener_wiring.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_listener_wiring.db")
 
 
 def _enabled_settings():

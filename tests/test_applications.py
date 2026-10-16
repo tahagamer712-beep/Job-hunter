@@ -15,7 +15,7 @@ from src.email_credentials import encrypt_password  # noqa: E402
 from src.pipeline_multiuser import ingest_ad  # noqa: E402
 from src.taxonomy import TaxonomyStore  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_applications.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_applications.db")
 SOURCE = {"platform": "manual", "channel": None, "message_id": "1", "url": None, "date": "2026-08-30"}
 
 

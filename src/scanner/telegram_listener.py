@@ -43,6 +43,7 @@ from src.scanner.rate_limiter import ActionRateLimiter, ExponentialBackoff, Grad
 try:
     from telethon import TelegramClient, events
     from telethon.errors import FloodWaitError
+    from telethon.tl.functions.channels import JoinChannelRequest
     TELETHON_AVAILABLE = True
 except ImportError:
     TELETHON_AVAILABLE = False
@@ -140,7 +141,7 @@ class TelegramListener:
                 await asyncio.sleep(delay)
 
             try:
-                await self.client(events.JoinChannelRequest(identifier))  # type: ignore
+                await self.client(JoinChannelRequest(identifier))
                 self.join_scheduler.record_join()
                 scanner_logger.info("Joined channel: %s", identifier)
             except FloodWaitError as e:

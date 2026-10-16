@@ -27,3 +27,6 @@ venv/
 
 # OS
 .DS_Store
+*.session*
+*.bak_*
+tests/.tmp/

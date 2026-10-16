@@ -30,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -1317,4 +1317,9 @@ def build_application() -> Application:
 if __name__ == "__main__":
     application = build_application()
     logger.info("Job Hunter multi-user bot starting (polling mode).")
+    # Python 3.14 compat: ensure an event loop exists before PTB run_polling()
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
     application.run_polling()

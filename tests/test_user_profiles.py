@@ -9,7 +9,7 @@ from src.database import Database  # noqa: E402
 from src.taxonomy import TaxonomyStore  # noqa: E402
 from src.user_profiles import UserProfileStore, is_valid_email  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_user_profiles.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_user_profiles.db")
 
 
 class TestUserProfiles(unittest.TestCase):

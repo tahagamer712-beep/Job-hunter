@@ -75,16 +75,21 @@ class TaxonomyStore:
 
     def match_category(self, raw_text: str) -> Optional[JobCategory]:
         """
-        Returns the first category whose alias appears in raw_text, or None
-        if nothing matches (caller should then queue a pending title).
+        Returns the category with the LONGEST matching alias in raw_text.
+        Longest-match wins so "assistant pharmacist" beats "pharmacist".
+        Returns None if nothing matches (caller queues a pending title).
         """
         match_text = normalize_for_matching(raw_text)
+        best = None
+        best_len = 0
         for category in self.list_categories():
             for alias in category.aliases:
-                alias_norm = normalize_for_matching(alias)
-                if alias_norm.strip() and alias_norm in match_text:
-                    return category
-        return None
+                alias_norm = normalize_for_matching(alias).strip()
+                if alias_norm and alias_norm in match_text:
+                    if len(alias_norm) > best_len:
+                        best_len = len(alias_norm)
+                        best = category
+        return best
 
     # --- Pending title triage (admin queue) ---
 

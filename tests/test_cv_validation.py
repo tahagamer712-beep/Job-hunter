@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.cv_manager import add_cv, is_allowed_cv_file  # noqa: E402
 from src.database import Database  # noqa: E402
 
-TEST_DB_PATH = "/tmp/test_cv_validation.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_cv_validation.db")
 
 
 class TestCvValidation(unittest.TestCase):
