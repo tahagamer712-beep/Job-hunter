@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -89,7 +90,7 @@ class TestProcessMessageFnReachesMultiUserDelivery(unittest.IsolatedAsyncioTestC
             for ad_text in split_ads(raw_text):
                 ingest_ad(self.db, ad_text, source, notify_fn=lambda u, j: delivered.append((u, j)))
 
-        source = {"platform": "telegram", "channel": "@TestChannel", "message_id": "1", "url": None, "date": "2026-08-30"}
+        source = {"platform": "telegram", "channel": "@TestChannel", "message_id": "1", "url": None, "date": "2026-08-30", "posted_at": datetime.now(timezone.utc).isoformat()}
         await multiuser_scanner_process("مطلوب مندوب علمي - الرصافة بغداد", source)
 
         self.assertEqual(len(delivered), 1)
@@ -109,7 +110,7 @@ class TestProcessMessageFnReachesMultiUserDelivery(unittest.IsolatedAsyncioTestC
             "❍✦ —— DNAIRAQ™ ••••••\n\n"
             "مطلوب مندوب علمي - الكرخ بغداد"  # user1 has no Karkh preference -> no match for this one
         )
-        source = {"platform": "telegram", "channel": "@TestChannel", "message_id": "2", "url": None, "date": "2026-08-30"}
+        source = {"platform": "telegram", "channel": "@TestChannel", "message_id": "2", "url": None, "date": "2026-08-30", "posted_at": datetime.now(timezone.utc).isoformat()}
         await multiuser_scanner_process(batched, source)
 
         self.assertEqual(len(delivered), 1, "Only the Rusafa ad should match user1's preferences")

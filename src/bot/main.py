@@ -1449,21 +1449,39 @@ async def handle_admin_callback(query, context, uid: str, data: str):
     if data == "admin:locations":
         from src.location_tree import LocationTree
         tree = LocationTree()
-        # Count by side via parent chain
-        rusafa_n = karkh_n = 0
         try:
             all_nodes = tree.all_nodes() if hasattr(tree, "all_nodes") else []
         except Exception:
             all_nodes = []
-        verified = sum(1 for n in all_nodes if getattr(n, "status", "") == "verified")
+        verified = [n for n in all_nodes if getattr(n, "status", "") == "verified"]
+        unverified = [n for n in all_nodes if getattr(n, "status", "") != "verified"]
+        lines = [f"📍 إدارة المناطق\n", f"✅ موثقة: {len(verified)} | ⏳ غير موثقة: {len(unverified)}\n"]
+        for n in unverified[:10]:
+            lines.append(f"⏳ {n.name_ar} ({n.id})")
+            kb_u = InlineKeyboardMarkup([[
+                InlineKeyboardButton(f"✅ اعتماد {n.name_ar}", callback_data=f"admin:verify_area:{n.id}"),
+            ]])
+            await query.message.reply_text("\n".join(lines), reply_markup=kb_u)
+            lines = []
+        if lines:
+            await query.message.reply_text(
+                "\n".join(lines) + "\n\nلإضافة منطقة: `/addarea الاسم_بالعربية | الاسم_بالإنجليزية | rusafa`",
+                parse_mode="Markdown")
+        return
+
+    if data.startswith("admin:verify_area:"):
+        area_id = data.split(":")[-1]
+        # P1: explicit owner approval required to promote to verified
+        # Log the change with timestamp and actor
+        try:
+            db.log_review_decision(0, uid, "unverified", "VERIFY_AREA",
+                                   f"area_id={area_id}")
+        except Exception:
+            pass
         await query.message.reply_text(
-            f"📍 إدارة المناطق\n\n"
-            f"مناطق موثقة: {verified}\n\n"
-            f"لإضافة منطقة جديدة أرسل:\n"
-            f"`/addarea <الاسم بالعربية> | <الاسم بالإنجليزية> | rusafa|karkh`\n\n"
-            f"المنطقة الجديدة تُضاف بحالة unverified وتحتاج اعتمادًا صريحًا.",
-            parse_mode="Markdown",
-        )
+            f"📝 تم تسجيل طلب اعتماد المنطقة `{area_id}`.\n"
+            f"التفعيل اليدوي في `data/location_tree.json` (status → verified) ثم إعادة تشغيل الاختبارات.",
+            parse_mode="Markdown")
         return
 
     if data == "admin:analytics":

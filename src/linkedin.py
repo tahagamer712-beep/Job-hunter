@@ -68,7 +68,10 @@ def submit_manual_linkedin_url(db: Database, url: str, pipeline_context: Optiona
     if not is_valid_linkedin_job_url(url):
         raise ValueError("Not a recognized LinkedIn job URL (expected linkedin.com/jobs/...).")
 
-    source = {"platform": "linkedin", "channel": None, "message_id": None, "url": url, "date": None}
+    from datetime import datetime, timezone as _tz
+    # Manual submission: the user submits NOW, so posted_at = now (provably fresh)
+    source = {"platform": "linkedin", "channel": None, "message_id": None, "url": url,
+              "date": None, "posted_at": datetime.now(_tz.utc).isoformat()}
 
     if pipeline_context:
         result = ingest_ad(db, pipeline_context, source, today=today)

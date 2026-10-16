@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -10,7 +11,7 @@ from src.pipeline_multiuser import ingest_ad  # noqa: E402
 from src.taxonomy import TaxonomyStore  # noqa: E402
 
 TEST_DB_PATH = os.path.join(os.path.dirname(__file__), ".tmp", "test_per_user_save_ignore.db")
-SOURCE = {"platform": "manual", "channel": None, "message_id": "1", "url": None, "date": "2026-08-30"}
+SOURCE = {"platform": "manual", "channel": None, "message_id": "1", "url": None, "date": "2026-08-30", "posted_at": datetime.now(timezone.utc).isoformat()}
 
 
 class TestPerUserSaveIgnore(unittest.TestCase):

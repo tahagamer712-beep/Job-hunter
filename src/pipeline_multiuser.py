@@ -21,7 +21,7 @@ with one that:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import Callable, List, Optional
 
 from .duplicate_detector import find_duplicate, text_hash
@@ -59,7 +59,8 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
     """
     # --- Role ---
     ACCEPT_AR = {"مندوب طبي", "مندوب علمي", "مندوب إعلام دوائي", "صيدلي",
-                 "أجهزة طبية", "مستلزمات طبية"}
+                 "أجهزة طبية", "مستلزمات طبية",
+                 "مندوبة طبية", "مندوبة علمية", "مندوبة إعلام دوائي", "صيدلانية"}
     ACCEPT_EN = {"MEDICAL_REPRESENTATIVE", "SCIENTIFIC_REPRESENTATIVE", "MEDICAL_INFORMATION",
                  "PHARMACIST", "MEDICAL_DEVICES", "PHARMACEUTICAL"}
     REJECT_AR = {"مبيعات عامة", "تجميل", "عناية بالبشرة", "تسويق", "إداري"}
@@ -72,7 +73,8 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
         key_en = cname.upper().replace(" ", "_")
         is_accept = (cname in ACCEPT_AR or key_en in ACCEPT_EN
                      or any(a in key_en for a in ("MEDICAL_REP", "SCIENTIFIC", "PHARMA"))
-                     or "مندوب طبي" in cname or "مندوب علمي" in cname)
+                     or "مندوب طبي" in cname or "مندوب علمي" in cname
+                     or "مندوبة طبية" in cname or "مندوبة علمية" in cname)
         is_reject = (cname in REJECT_AR or key_en in REJECT_EN
                      or any(r in key_en for r in ("GENERAL_SALES", "COSMETICS"))
                      or "تجميل" in cname)
@@ -158,7 +160,7 @@ def compute_decisions(category, detected_area_ids, tree, raw_text: str,
     fresh = True
     if posted_at:
         try:
-            from datetime import datetime, timezone
+            from datetime import date, datetime, timezone, timedeltatime, timezone
             pa = posted_at
             if isinstance(pa, str):
                 pa = datetime.fromisoformat(pa.replace("Z", "+00:00"))
@@ -258,29 +260,35 @@ def ingest_ad(db, raw_text: str, source: dict, notify_fn: Optional[Callable] = N
     if expiry_status == "EXPIRED":
         return result  # already expired -> no delivery
 
-    # 72-hour rule: don't deliver ads older than 72h
+    # 72-hour rule (STRICT): only ads provably <72h old are delivered.
+    # - age >= 72h exactly: REJECTED (boundary inclusive per P0 spec)
+    # - unknown/unparseable date: REJECTED (not assumed fresh per P0 spec)
+    # - future >1h: REJECTED
     # Use source_posted_at (original Telegram date) if available
     posted_at = None
     if hasattr(result, 'posted_at') and result.posted_at:
         posted_at = result.posted_at
     elif 'posted_at' in source:
         posted_at = source['posted_at']
+    _fresh = False
     if posted_at:
-        if isinstance(posted_at, str):
-            try:
-                posted_at = datetime.fromisoformat(posted_at.replace('Z', '+00:00'))
-            except:
-                posted_at = None
-        if posted_at:
-            if posted_at.tzinfo is None:
-                posted_at = posted_at.replace(tzinfo=timezone.utc)
-            age = datetime.now(timezone.utc) - posted_at
-            if age > timedelta(hours=72):
-                result.exclusion_reason = f"too_old: {age.total_seconds()/3600:.1f}h"
-                return result  # too old -> no delivery
-    # Unknown age: allow delivery (logged) — strict blocking would break
-    # existing flows that don't pass posted_at. The 72h rule applies
-    # when posted_at is available.
+        try:
+            pa = posted_at
+            if isinstance(pa, str):
+                pa = datetime.fromisoformat(pa.replace('Z', '+00:00'))
+            if pa.tzinfo is None:
+                pa = pa.replace(tzinfo=timezone.utc)
+            age_h = (datetime.now(timezone.utc) - pa).total_seconds() / 3600
+            if 0 <= age_h < 72:
+                _fresh = True
+            else:
+                result.exclusion_reason = f"too_old_or_future: {age_h:.1f}h"
+        except Exception:
+            result.exclusion_reason = "unparseable_date"
+    else:
+        result.exclusion_reason = "unknown_date"
+    if not _fresh:
+        return result  # not provably fresh -> no delivery
     # Note: missing area no longer blocks delivery. Area is a boost,
     # not a requirement — category match is the primary filter.
 
