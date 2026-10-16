@@ -48,6 +48,14 @@ try:
 except ImportError:
     TELETHON_AVAILABLE = False
 
+try:
+    from src.ocr_processor import process_ad_image, is_ocr_available
+    _OCR_MODULE_OK = True
+except ImportError:
+    _OCR_MODULE_OK = False
+    def is_ocr_available():
+        return False
+
 
 MIN_SECONDS_BETWEEN_READS = 5.0
 MIN_SECONDS_BETWEEN_JOINS = 30.0
@@ -172,12 +180,46 @@ class TelegramListener:
                     "Supply process_message_fn for custom notification handling."
                 )
 
+    async def _ocr_message_photo(self, event) -> str | None:
+        """Download photo, OCR, cleanup. Returns text or None. Never raises."""
+        import os
+        import tempfile
+        tmp_path = None
+        try:
+            tmpdir = "/data/data/com.termux/files/home/job_hunter/tests/.tmp"
+            os.makedirs(tmpdir, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(suffix=".jpg", prefix="jh_ocr_", dir=tmpdir)
+            os.close(fd)
+            await event.download_media(file=tmp_path)
+            if os.path.getsize(tmp_path) > 10 * 1024 * 1024:
+                return None
+            result = process_ad_image(tmp_path)
+            return result.get("ocr_text") if result.get("success") else None
+        except Exception:
+            return None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
     def register_handlers(self, channel_identifiers: list[str]):
         @self.client.on(events.NewMessage(chats=channel_identifiers))
         async def handler(event):
             await self.read_limiter.wait_if_needed_async()
 
-            raw_text = event.raw_text
+            raw_text = event.raw_text or ""
+            # OCR: extract text from photo messages
+            if _OCR_MODULE_OK and is_ocr_available():
+                try:
+                    photo = getattr(event.message, "photo", None)
+                    if photo:
+                        ocr_text = await self._ocr_message_photo(event)
+                        if ocr_text:
+                            raw_text = (raw_text + "\n\n[OCR]\n" + ocr_text).strip()
+                except Exception as e:
+                    scanner_logger.warning(f"OCR failed msg {event.id}: {type(e).__name__}")
             if not raw_text:
                 return
 
